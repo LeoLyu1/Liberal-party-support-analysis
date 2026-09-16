@@ -22,4 +22,4 @@ The estimate depends on the assumed sampling design, use of 2021 population tota
 
 **Tools:** R, tidyverse, ggplot2, knitr, and Quarto.
 
-The supplied source expects `ces_web.csv` and `ces_phone.csv` in the working directory; these datasets are not included. The code has not been rerun for this upload.
+
