@@ -18,7 +18,7 @@ The estimate depends on the assumed sampling design, use of 2021 population tota
 ## Code and Report
 
 - [Full report](liberal_support_report.pdf)
-- [Quarto analysis source](liberal_support_analysis.qmd)
+- [Code](liberal_support_analysis.qmd)
 
 **Tools:** R, tidyverse, ggplot2, knitr, and Quarto.
 
