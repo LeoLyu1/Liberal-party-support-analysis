@@ -1,0 +1,256 @@
+---
+title: "Prediction of Liberal Party Support Proportion in the 2019 Canadian Federal Election Using Web Survey Data"
+author: "Group 33: Carina Wang, Qinyu Qu, Zixuan Lu, Leo Lyu"
+subtitle: "STA304 - Winter 2025 - Assignment 2"
+format: pdf
+editor: visual
+---
+
+```{r, include = FALSE}
+
+
+library(tidyverse)
+
+phone_data <- read_csv("ces_phone.csv")
+web_data <- read_csv("ces_web.csv")
+
+
+```
+
+# 1 Introduction
+
+This report aims to predict the proportion of votes for the Liberal Party and establish the prominent determinants in favor of the Liberal Party in the 2019 election for the Canadian Federal Election using web survey data from the 2019 Canadian Election Study (CES). Voting behavior and practices are very essential to democracy and shape politicians and election hobbyists' understanding within a context of social, economic, and political dimensions. Comprehending the patterns by which voting support presented itself will assist with understanding some of the driving forces behind Liberal electoral support in 2019.
+
+According to one study, women and men do not show a clear difference according to participation rates, although they tend to engage slightly differently, with men opting for public action and women resorting to more diffused and individualized channels of participation (Houle, 2022). Based on this we can assume the participation of male and females is close to the same in the analysis.
+
+The data set is **assumed to have been collected via stratified random sampling**, where **gender** serves as the stratification variable. Stratified sampling ensures that different genders are proportionally represented, reducing sampling bias and improving the accuracy of statistical estimates. One study implies gender has an effect on voting behavior to some extent (Erickson & O’Neill, 2002). Given that gender has been shown to influence political preferences, it serves as a meaningful sampling variable factor in our analysis.
+
+Moreover, the study by Erickson & O’Neill shows that traditionally women cast their votes for center-right parties. However, now the trend shows support for left-leaning parties. According to the realignment thesis, women vote leftward as a society progresses. The study, overall, emphasizes cultural values as more powerful influences on gendered voting behavior than considering economic factors (Erickson & O’Neill, 2002). In addition to gender, the logistic regression model will incorporate two other numeric variables, **age** and **educational level**, to examine their effects on the probability of voting for the Liberal Party.
+
+Specifically, we aim to estimate the proportion of votes the Liberal Party is expected to receive, construct a **95% confidence interval** for this estimate, and develop a **logistic regression model** to predict the probability of voting for the Liberal party. By understanding these voting patterns, we can gain insights into the factors that shaped electoral support for the Liberals in 2019.
+
+# 2 Data
+
+```{r, include = FALSE}
+library(dplyr)
+
+web_data <- web_data %>% 
+  mutate(
+    gender = case_when(
+      cps19_gender == 1 ~ "Male",
+      cps19_gender == 2 ~ "Female",
+      cps19_gender == 3 ~ "Other"
+    ),
+    EduByGroup = case_when(
+      cps19_education <= 3  ~ "Basic",
+      cps19_education %in% 4:5  ~ "Elementary",
+      cps19_education %in% 6:7  ~ "Technical",
+      cps19_education %in% 8:9  ~ "University",
+      cps19_education %in% 10:11 ~ "Advance",
+      cps19_education == 12 ~ "Unknown"
+    ),
+    age = 2019 - (1919 + cps19_yob)
+  ) %>% 
+  filter(EduByGroup != "Unknown", gender != "Other")
+
+web_data <- web_data %>% 
+  filter(!is.na(gender) & !is.na(EduByGroup) & !is.na(cps19_votechoice))
+
+web_data <- web_data %>% 
+  mutate(
+    vote_liberal = ifelse(cps19_votechoice == 1, 1, 0)
+  )
+```
+
+```{r, echo = FALSE}
+
+
+library(ggplot2)
+library(dplyr)
+
+gender_proportion <- web_data %>%
+  group_by(gender) %>%
+  summarise(count = n()) %>%
+  mutate(proportion = count / sum(count))
+
+ggplot(gender_proportion, aes(x = gender, y = proportion, fill = gender)) +
+  geom_bar(stat = "identity") +  # Use "identity" to plot given proportions
+  labs(title = "Proportion of Gender in the Survey", 
+       x = "Gender", 
+       y = "Proportion") +
+  theme_minimal() +
+  scale_fill_manual(values = c("Male" = "blue", "Female" = "pink", "Other" = "purple")) +
+  theme(legend.position = "none") +
+  scale_y_continuous(labels = scales::percent_format())
+```
+
+Figure 1: Proportion of Gender in the web survey
+
+The data set used for the sample is the web survey dataset from the 2019 Canadian Election Study (CES), which has 37822 observations. The stratification variable is gender (variable cps19_gender in the original dataset). Gender is "Male" for cps19_gender = 1, "Female" for cps19_gender = 2, and "Other" for cps19_gender = 3. In the data cleaning process, we grouped education level (variable cps19_education in the dataset) into 5 categories. Educational level is "Basic" for cps19_education less than or equal to 3,  "Elementary" for cps19_education 4 and 5,  "Technical" for cps19_education 6 and 7, "University" for cps19_education 8 and 9,  "Advance" for cps19_education 10 and 11, and "Unknown" for cps19_education 12. Variable age is derived by subtracting the sum of variable cps19_yob (year of birth) and 1919, from 2019. 
+
+We removed all observations with “Unknown” education level and all observations with missing values for gender, educational level, or vote choice. We also removed all observations with gender “other”, which is less than 1% of total observations in the sample dataset, since gender only has two categories “Male” and “Female” in the population dataset from Statistics Canada (Government of Canada, Statistics Canada, 2023). We created a categorical variable vote_liberal, which is 1 if vote choice equal to 1, and 0 otherwise. Vote_liberal is the outcome variable for the logistic regression model. After data cleaning, there are 31273 observations in the sample dataset. The barplot “Proportion of Gender in the web survey” shows that there are approximately 20% more females than males in the sample data set.
+
+The Canadian population and the population size of each strata is obtained from Statistics Canada, Census Profile, 2021 Census of Population. We assumed there would be no population change between 2019 and 2021. The Canadian population is 36,991,980 (Government of Canada, Statistics Canada, 2023). The population for males is 18,226,240, while the population for females is 18,765,740, and there are no other categories for gender (Government of Canada, Statistics Canada, 2023).
+
+# 3 Methods
+
+The confidence interval for proportion of votes for the Liberal party is estimated by using the formula in Sampling: Design and Analysis.
+
+$$\hat{p}_{str} \pm z_{\alpha/2} \sqrt{\sum_{h=1}^{H} W_h^2 \left( 1 - \frac{n_h}{N_h} \right) \frac{\hat{p}_h(1- \hat{p}_h)}{n_h-1}} $$
+
+$\hat{p}_{str}$ is the stratified sample proportion, the sum of the weighted average of each strata proportions, which is calculated by using the formula $\sum_{h=1}^{H} W_h \hat{p}_h$. $z_{\alpha/2}$ is the critical value from the standard normal distribution, here we consider it as 1.96 for 95% confidence. $H$ and $h$ represent the total number of strata and refer to a specific stratum respectively. $\sqrt{\sum_{h=1}^{H}}$ denotes the summation over all strata. $W_h = \frac{N_h}{N}$ gives the weight of each stratum, where $N$ and $N_h$ is the total population size and population size of stratum $h$. $\left( 1 - \frac{n_h}{N_h} \right)$ is the finite population correction, which adjusts for sampling without replacement in finite populations. $\hat{p}_h$ is the sample proportion in stratum $h$ and $\frac{\hat{p}_h(1- \hat{p}_h)}{n_h-1}$ provides the estimated variance of the sample proportion within each stratum, adjusted for sample size $n_h$.
+
+\newpage
+
+$$log\Big(\frac{\hat{p}}{1-\hat{p}}\Big) = \hat{\beta_0} + \hat{\beta_1} x_{age} + \hat{ \beta_2}x_{gender} + \hat{\beta_3}x_{EduByGroup}$$
+
+The $\hat{p}$ in the formula represents the estimated proportion of voting for the liberal party. The independent variables in the logistic regression are Gender (Male, Female), Education Level ( Basic, Elementary, Technical, University, Advanced), and age. For Education and Gender, they are stratification variables. The Age variable is the numerical variable. For the stratification variables, each coefficient represents the **log-odd** change in voting Liberal relative to the reference category by fixing the numerical variable the same.  For the numerical variable, the coefficient represents the log-odd change when the numerical variable increases by one unit. ​​This logistic regression model estimates the likelihood of voting for the Liberal party based on demographic characteristics. Since the outcome variable is binary, the model uses the **logit** to ensure predictions remain between 0 and 1. In the Result section, the estimate interprets the coefficient for each variable. We use p-value to determine whether the independent variables are statistically significant. If the p-value is under the significance level 0.05, it is considered as statistically significant. In contrast, if the p-value is above the significance level 0.05, it is considered as statistically insignificant.
+
+# 4 Results
+
+```{r, include = FALSE}
+
+library(dplyr)
+library(knitr)
+
+
+N_total <- 36991980  
+N_female <- 18765740 
+N_male <- 18226240    
+
+
+W_female <- N_female / N_total
+W_male <- N_male / N_total
+
+
+prop_summary <- web_data %>%
+  group_by(gender) %>%
+  summarise(
+    n_h = n(),
+    p_h = mean(vote_liberal),  
+    var_h = p_h * (1 - p_h) / (n_h-1) 
+  )
+
+p_female <- prop_summary$p_h[prop_summary$gender == "Female"]
+p_male <- prop_summary$p_h[prop_summary$gender == "Male"]
+
+n_female <- prop_summary$n_h[prop_summary$gender == "Female"]
+n_male <- prop_summary$n_h[prop_summary$gender == "Male"]
+
+var_female <- prop_summary$var_h[prop_summary$gender == "Female"]
+var_male <- prop_summary$var_h[prop_summary$gender == "Male"]
+
+
+p_stratified <- W_female * p_female + W_male * p_male
+var_stratified <- (W_female^2 * (1 - n_female / N_female) * var_female) +
+                  (W_male^2 * (1 - n_male / N_male) * var_male)
+
+
+z_alpha_2 <- qnorm(0.975) 
+margin_error <- z_alpha_2 * sqrt(var_stratified)
+ci_lower <- p_stratified - margin_error
+ci_upper <- p_stratified + margin_error
+
+
+list(
+  proportion_liberal = p_stratified,
+  confidence_interval = c(ci_lower, ci_upper)
+)
+```
+
+|                       | Proportion of Outcome Variable | 95% Confidence Interval of Outcome Variable |
+|:------------------|-----------------------|------------------------------|
+| proportion of liberal | 0.2850038                      | (0.2799366, 0.2900709)                      |
+
+: Confidence intervals for the estimated proportion of Liberal voters using the web survey data.
+
+The confidence interval table presents the estimated proportion of Liberal voters among all Canadian citizens via stratified sampling is 28.5% and the confidence interval (0.2799, 0.2901) suggests that we are 95% confident that the true proportion of Liberal voters in the population is in this window. This small Margin of error suggested that the estimation of the proportion has a high level of precision.
+
+```{r, include = FALSE}
+sum(is.na(web_data$vote_liberal))
+sum(web_data$vote_liberal)
+
+nrow(web_data)
+sum(web_data$gender == "Male")
+sum(web_data$gender == "Female")
+
+web_data <- web_data %>% 
+  mutate(
+    vote_liberal = ifelse(cps19_votechoice == 1, 1, 0)
+  )
+
+lg <- glm(vote_liberal ~ gender + EduByGroup + age, data = web_data, family = "binomial")
+
+summary(lg)
+```
+
+\newpage
+
+Table 2: Logistic Regression Results for voting Liberal likelihood
+
+```{r, echo = FALSE}
+
+library(knitr)
+kable(summary(lg)$coefficients, digits = 3)
+
+
+
+
+```
+
+```{r, include = FALSE}
+pred_odds <- predict(lg, tibble(EduByGroup="Basic", gender="Female",age = 18))
+exp(pred_odds)/(1+exp(pred_odds))
+
+pred_odds1 <- predict(lg, tibble(EduByGroup="Basic", gender="Male",age = 18))
+exp(pred_odds1)/(1+exp(pred_odds1))
+
+```
+
+We use logistic regression to predict the proportion of voting for the liberal party. The proportion is link to the a linear combination of covariates with a logit link function. The covariates are Gender (Male, Female), Education Level ( Basic, Elementary, Technical, University, Advanced), and age. The above table presents the results of the **logistic regression model** assessing the impact of **gender, education level, and age** on the likelihood of voting for the **Liberal** party. The model predicts the probability of voting Liberal using a **binomial distribution** with a **logit link function**.
+
+For **education level**, the reference group is **Advanced education**. For gender, the reference group is Female. By the wald test, the p-value for Male is 0.78 which is significantly larger than significant level 0.05. It indicates that there is no difference in log-odds between Male and Female for people with the same education level and age. The p-value for all the education groups are under the significance level 0.05. In this case, all the education groups are statistically significant. By the above table, for people with the same age, the log-odd for Basic education group on average decreases by 0.27 compared to the reference group. The log-odds for Elementary, Technical, University on average decrease by 0.67, 0.54, 0.14 respectively compared to the reference groups. For people with the same education level, if age increases by one unit, the log-odd on average increases by 0.0038.
+
+By logistic regression, the estimate for the portion for females with 18 year olds Basic education level has a 27.42% chance to vote for Liberal party. Similarly, the estimate for the portion for Male with 18 year olds Basic education level has a 27.57% chance to vote for Liberal party.
+
+# 5 Discussion
+
+The objective of this study is to predict the proportion of votes the Liberal party will receive in the 2019 Federal election. Based on the web survey data, we found that the estimated proportion of voters supporting the Liberal Party will be approximately 28.5% using stratified random sampling with stratification variable gender, with a narrow confidence interval (0.2799, 0.2901). The logistic regression result indicates that gender does not have a statistically significant impact on the likelihood of voting Liberal, while education level and age are significant predictors. Individuals with lower education levels are less likely to support the Liberal Party compared to those with advanced education, and age shows a minor positive association with Liberal support.
+
+There are several limitations in the analysis. We assumed no population change between 2019 and 2021 when obtaining the total population size and the population size for each strata. However, there might be slight population changes between two years, which introduces measurement bias. Selection bias is also involved. In the sample, there are one third more females than males in the dataset. However, in the population, there are only approximately 3% more females than males. We also removed all observations with gender “other” which is less than 1% in the sample data set because it does not exist in the population data set estimate obtained from Statistics Canada (Government of Canada, Statistics Canada, 2023). Therefore, individuals included in the study might not be representative of the whole Canadian population and those people with gender “other” are systematically excluded from the study, which introduces selection bias. Sampling error is also involved because a sample is only a subset of the entire population. Since we are only studying a part of the population, there is always some level of variability between the sample and the population.
+
+For future studies, researchers could collect population data for 2019 and include those people with gender other than male and female during the data collection process for population data. This would potentially mitigate the measurement bias and the selection bias due to exclusion of certain groups. For the sample, researchers could collect data for approximately equal numbers of males and females in the study, since there are approximately equal numbers of males and females in the population (Government of Canada, Statistics Canada, 2023). Researchers could also increase the sample size to reduce the level of variability between the sample and the population to mitigate the risk of sampling errors.
+
+# 6 Generative AI Statement
+
+In this research, we used a Generative AI tool to help generate R code to calculate the proportion of Liberal votes through stratified sampling. The AI provided some code comments based on statistical formulas, ensuring that our technique followed standard practices for survey-weighted estimation. It helped us to perform calculations for stratification weights, sample proportions, and confidence intervals, each of the steps necessary for generating some required estimations. We can improve our workflow by using AI, decreasing some coding errors and increasing efficiency.
+
+Further from the code part, AI played an important role in improving our statistical methods. It helped us to find different methods, such as correcting for non-response bias or testing various weight adjustment methods. By checking the code, we ensured that our analysis was consistent with the specific statistical concepts. While we did not use AI to replace statistical reasoning, it was a useful tool for evaluating our approach and improving the accuracy of our calculations.
+
+In addition to technical support, AI was used to improve the structure and clarity of our written report. It assisted us in refining our explanations, ensuring that difficult statistical ideas were explained precisely and clearly. Furthermore, AI-assisted grammar and formatting checks helped us to keep consistency throughout the article while following academic writing standards. This was useful in ensuring that key arguments and findings were properly instructed and easy to understand.\
+
+# 7 Ethics Statement
+
+This analysis's reproducibility is verified by using publicly available data from the 2019 Canadian Election Study (CES) and 2021 Census data from Statistics Canada. All data cleaning, transformation, and statistical modeling methods have been described, allowing for the verification and reproducibility of our findings. Proper statistical procedures were used to check the reliability and validity of the findings.
+
+This research does not require approval from the University of Toronto's Research Ethics Board (REB) because it is entirely based on publicly available secondary data. According to the regulation, REB permission is normally necessary for research involving human subjects or personal information that is not already publicly available. However, research employing publicly available datasets—where individuals have no reasonable expectation of privacy—is excluded from this requirement.
+
+Additionally, our study does not involve any direct interaction with participants or contains any new personal data. Thus, this study does not require REB clearance; we follow ethical research procedures by guaranteeing data transparency, protecting survey respondents' confidentiality, and publishing findings responsibly.
+
+\newpage
+
+# 8 Bibliography
+
+1.  Allaire, J. J., et al. (n.d.). Introduction to R Markdown. RStudio. Retrieved from<https://rmarkdown.rstudio.com/docs/>
+
+2.  Erickson, L., & O’Neill, B. (2002). The gender gap and the changing woman voter in Canada. International Political Science Review, 23(4), 373–392.<https://doi.org/10.1177/0192512102023004003>
+
+3.  Grolemund, G. (2014, July 16). Introduction to R Markdown. RStudio. Retrieved from<https://rmarkdown.rstudio.com/articles_intro.html>
+
+4.  Houle, N. (2022). Gender gap or gender differences? Gender and political participation in Canada. Canadian Journal of Family and Youth, 14(2), 297–345.<https://doi.org/10.29173/cjfy29849>
+
+5.  Lohr, S. L. (2019). Sampling: Design and analysis (2nd ed.). CRC Press. https://doi.org/10.1201/9780429296284
+
+6.  OpenAI. (2025). ChatGPT \[Large language model\]. Retrieved from<https://openai.com/chatgpt>
+
+7.  Statistics Canada. (2023, November 15). Profile table, Census Profile, 2021 Census of Population - Canada \[Country\]. Government of Canada. Retrieved from<https://www12.statcan.gc.ca/census-recensement/2021/dp-pd/prof/details/page.cfm?LANG=E&GENDERlist=1,2,3&STATISTIClist=1&DGUIDlist=2021A000011124&HEADERlist=2,,37,39,38,36,1&SearchText=Canada>
